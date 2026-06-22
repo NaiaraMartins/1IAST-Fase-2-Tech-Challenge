@@ -139,7 +139,14 @@ def validate_gold(client: bigquery.Client) -> list:
         state_count = query_scalar(client, f"""
             SELECT COUNT(DISTINCT sigla_uf) FROM `{GCP_PROJECT_ID}.gold.ranking_estados`
         """)
-        check(state_count >= 27, f"gold.ranking_estados covers 27 states (found {state_count})", errors)
+        silver_state_count = query_scalar(client, f"""
+            SELECT COUNT(DISTINCT sigla_uf) FROM `{GCP_PROJECT_ID}.silver.alfabetizacao_uf_clean`
+        """) or 0
+        check(
+            state_count >= silver_state_count,
+            f"gold.ranking_estados covers all silver states ({state_count}/{silver_state_count})",
+            errors,
+        )
 
     return errors
 
