@@ -60,8 +60,10 @@ GOLD_TABLES = {
     """,
 
     "ranking_estados": f"""
-        WITH ano_recente AS (
-            SELECT MAX(ano) AS max_ano FROM `{GCP_PROJECT_ID}.silver.alfabetizacao_uf_clean`
+        WITH ano_recente_por_uf AS (
+            SELECT sigla_uf, MAX(ano) AS max_ano
+            FROM `{GCP_PROJECT_ID}.silver.alfabetizacao_uf_clean`
+            GROUP BY sigla_uf
         ),
         base AS (
             SELECT
@@ -69,7 +71,8 @@ GOLD_TABLES = {
                 uf.nome_uf,
                 AVG(uf.taxa_alfabetizacao) AS taxa_media
             FROM `{GCP_PROJECT_ID}.silver.alfabetizacao_uf_clean` AS uf
-            JOIN ano_recente ON uf.ano = ano_recente.max_ano
+            JOIN ano_recente_por_uf ar
+                ON uf.sigla_uf = ar.sigla_uf AND uf.ano = ar.max_ano
             GROUP BY uf.sigla_uf, uf.nome_uf
         ),
         metas AS (
