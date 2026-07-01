@@ -14,6 +14,9 @@ Para medir esse avanço, o INEP criou o **Indicador Criança Alfabetizada**, que
 
 ## Arquitetura da Solução
 
+![alt text](<Diagrama de Contexto-1.png>)
+![alt text](<Diagrama de Container-1.png>)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │           FONTE: Base dos Dados (BigQuery público)          │
@@ -90,6 +93,7 @@ Para medir esse avanço, o INEP criou o **Indicador Criança Alfabetizada**, que
 | Linguagem | **Python 3.11** | Bibliotecas maduras para GCP; padrão na engenharia de dados |
 | CI/CD | **GitHub Actions** | Orquestração gratuita com autenticação via Workload Identity |
 | Qualidade | **Validações nativas BigQuery** | Sem dependência de frameworks externos |
+| Controle de acesso | **Cloud IAM** | Serviço transversal que define e aplica quem pode fazer o quê em cada recurso do projeto |
 
 ---
 
