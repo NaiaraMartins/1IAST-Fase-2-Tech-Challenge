@@ -14,8 +14,10 @@ Para medir esse avanço, o INEP criou o **Indicador Criança Alfabetizada**, que
 
 ## Arquitetura da Solução
 
-![alt text](<Diagrama de Contexto-1.png>)
-![alt text](<Diagrama de Container-1.png>)
+
+<img src="Diagrama%20de%20Contexto.png" width="900">
+
+<img src="Diagrama%20de%20Container.png" width="900">
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
