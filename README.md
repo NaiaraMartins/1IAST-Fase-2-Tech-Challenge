@@ -16,7 +16,7 @@ Para medir esse avanço, o INEP criou o **Indicador Criança Alfabetizada**, que
 
 <img src="02_c4_contexto.jpg" width="900">
 
-<img src="03_c4_container.jpg" width="900">
+<img src="c4_container.jpg" width="900">
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
