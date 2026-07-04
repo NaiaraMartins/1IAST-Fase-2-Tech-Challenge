@@ -14,7 +14,6 @@ Para medir esse avanço, o INEP criou o **Indicador Criança Alfabetizada**, que
 
 ## Arquitetura da Solução
 
-
 <img src="02_c4_contexto.jpg" width="900">
 
 <img src="03_c4_container.jpg" width="900">
@@ -321,3 +320,6 @@ A camada Gold é o ponto de partida para análises avançadas e inteligência ar
 ├── requirements.txt
 └── README.md
 ```
+
+
+[def]: 2_c4_contexto.jp
