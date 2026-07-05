@@ -24,6 +24,22 @@ Para medir esse avanço, o INEP criou o **Indicador Criança Alfabetizada**, que
 
 ---
 ---
+## Diagrama de Contexto AS IS
+
+<img src="contexto_as_is.png" width="900">
+
+## Diagrama de Container AS IS
+
+<img src="Conatiner_as_is.png" width="900">
+
+## Diagrama de Contexto TO BE
+
+<img src="Contexto_to_be.png" width="900">
+
+## Diagrama de Container TO BE
+
+<img src="Container_to_be.png" width="900">
+
 
 ## 📐 Arquitetura AS-IS (Implementada)
 
@@ -125,14 +141,23 @@ dentro do free tier do GCP.
 
 ### Batch vs Streaming
 
-| | Batch (AS-IS) | Streaming (AS-IS) |
+| | Batch | Streaming |
 |---|---|---|
-| **Implementação** | `ingest_bronze.py` semanal via cron | `producer.py` + `consumer.py` via Pub/Sub |
-| **Custo** | Gratuito — load jobs no free tier | Gratuito — micro-lote via load job (sem insertAll pago) |
-| **Latência** | Semanal (segunda 6h UTC) | Minutos — micro-lote |
-| **Dados** | Base dos Dados pública · INEP · metas | Eventos simulados: medição · meta · indicador |
+| **Quando** | Metas anuais · INEP · IBGE · histórico | Novos indicadores · alertas urgentes · medições de desempenho |
+| **Custo AS-IS** | Grátis — load jobs no free tier | Grátis — micro-lote via load job (sem insertAll pago) |
+| **Custo TO-BE** | Baixo — Dataflow jobs sob demanda | Maior — Pub/Sub + Dataflow always-on |
+| **Latência AS-IS** | Semanal (segunda 6h UTC) | Minutos — micro-lote Pub/Sub |
+| **Latência TO-BE** | Horas / dias | Segundos |
+| **Implementação AS-IS** | `ingest_bronze.py` · GitHub Actions cron | `producer.py` + `consumer.py` · Pub/Sub simulado |
+| **Implementação TO-BE** | GitHub Actions cron + Dataflow Apache Beam | Pub/Sub + Dataflow Streaming always-on |
+| **Idempotência** | `WRITE_TRUNCATE` garante reexecução segura | Load job em micro-lote evita duplicação |
+| **Escalabilidade** | Adequada para volume atual (~3,9M linhas) | Ilimitada — Dataflow escala automaticamente |
 
-**Decisão:** batch para o volume histórico (90% dos dados); streaming simulado via Pub/Sub para demonstrar a capacidade de ingestão de eventos em tempo real sem custo adicional.
+**Decisão AS-IS:** pipeline híbrida com custo zero. Batch via script Python para o volume histórico; streaming simulado via Pub/Sub + consumer.py para demonstrar capacidade de ingestão de eventos em tempo real sem ultrapassar o free tier.
+
+**Decisão TO-BE:** mesma lógica híbrida, com infraestrutura gerenciada. Batch para 90% do volume (dados históricos e metas periódicas); streaming real via Pub/Sub + Dataflow always-on apenas para eventos onde latência importa — evitando pagar por infraestrutura contínua para dados que chegam com baixa frequência.
+
+
 
 ---
 
@@ -152,39 +177,70 @@ dentro do free tier do GCP.
 
 ---
 
-### Custo vs Performance — AS-IS
+### Custo vs Performance
 
-| Decisão | Escolha | Impacto |
-|---|---|---|
-| Armazenamento | BigQuery colunar nativo | Sem custo de GCS separado |
-| Particionamento | Por ano na Bronze | Queries leem só o período necessário |
-| Clusterização | Por id_municipio e serie | Reduz bytes escaneados em filtros comuns |
-| Queries | SELECT explícito (nunca `SELECT *`) | Evita escaneamento desnecessário |
-| Ingestão | WRITE_TRUNCATE idempotente | Sem duplicação em reexecuções |
-| Streaming | Load job em micro-lote | insertAll pago evitado — permanece no free tier |
-| Orquestração | GitHub Actions gratuito | Zero custo fixo de orquestração |
+| Decisão | AS-IS (Implementado) | TO-BE (Visão Profissional) | Impacto |
+|---|---|---|---|
+| **Formato de arquivo** | BigQuery colunar nativo | Parquet sobre GCS | AS-IS: sem custo de conversão · TO-BE: reduz I/O e armazenamento em até 80% vs CSV |
+| **Particionamento** | Por ano na Bronze | Por UF e ano no GCS + Gold | Queries leem só o período/região necessária em ambos |
+| **Clusterização** | Por `id_municipio` e `serie` | Por município na Gold | Reduz bytes escaneados em queries analíticas em ambos |
+| **Storage histórico** | BigQuery free tier (10 GB grátis) | GCS Nearline ($0,01/GB) → Coldline ($0,004/GB) | AS-IS: grátis até 10 GB · TO-BE: até 80% mais barato que Standard para dados frios |
+| **Processamento** | `ingest_bronze.py` + `transform_silver.py` Python | Dataflow serverless (Apache Beam) | AS-IS: sem custo · TO-BE: paga só pelo tempo de execução, sem cluster ocioso |
+| **Orquestração** | GitHub Actions gratuito | GitHub Actions gratuito | Zero custo fixo em ambos vs Cloud Composer (~$300/mês) |
+| **Consultas analíticas** | BigQuery on-demand (1 TB/mês grátis) | BigQuery on-demand | AS-IS: grátis no free tier · TO-BE: paga por dado escaneado, não por cluster ligado |
+| **Ingestão streaming** | Load job micro-lote (gratuito) | Pub/Sub + Dataflow always-on | AS-IS: $0 · TO-BE: custo contínuo justificado por latência real de segundos |
+| **API externa** | Não implementada | Cloud Run + API Gateway | TO-BE: Cloud Run escala a zero — custo zero em períodos ociosos |
+| **Qualidade de dados** | `validate.py` Python (gratuito) | SQL assertions nativas BigQuery (gratuito) | Ambos sem custo adicional · TO-BE mais integrado ao ecossistema |
+| **Custo total estimado** | **$0/mês** | **~$3–5/mês** | AS-IS ideal para projeto acadêmico · TO-BE justificado em produção corporativa |
 
-**Decisão: free tier primeiro, performance suficiente.** Para um volume de dados educacionais públicos (~3,9M linhas de alunos), o BigQuery free tier entrega performance adequada sem nenhum custo.
+**Decisão AS-IS: free tier primeiro, performance suficiente.** Para ~3,9M linhas de dados educacionais públicos, o BigQuery free tier entrega performance adequada com custo zero. `WRITE_TRUNCATE` garante idempotência sem acúmulo; `SELECT` explícito e clustering evitam escaneamento desnecessário.
+
+**Decisão TO-BE: custo primeiro, performance onde importa.** GCS Nearline/Coldline para histórico frio; Dataflow serverless só executa quando necessário; particionamento e clusterização apenas na Gold, onde as queries analíticas exigem velocidade. GitHub Actions mantém orquestração gratuita em ambas as visões.
 
 ---
 
-## 💰 FinOps — AS-IS
+## 💰 FinOps — AS-IS vs TO-BE
 
-| Serviço | Uso | Custo |
+### Estimativa de Custo Mensal
+
+| Serviço | AS-IS (Implementado) | TO-BE (Visão Profissional) |
 |---|---|---|
-| BigQuery (storage) | ~5 GB entre Bronze/Silver/Gold | Grátis (10 GB/mês free tier) |
-| BigQuery (queries) | ~50 GB escaneados/mês | Grátis (1 TB/mês free tier) |
-| BigQuery (load jobs) | Ingestão batch e micro-lote streaming | Grátis (sem cobrança por load job) |
-| Pub/Sub | ~5 GB de mensagens/mês | Grátis (10 GB/mês free tier) |
-| GitHub Actions | Workflows públicos | Grátis |
-| **Total** | | **$0/mês** |
+| **Google Cloud Storage (Standard)** | Não utilizado — BigQuery puro | ~$0,20 (10 GB Bronze ativo) |
+| **Google Cloud Storage (Nearline)** | Não utilizado | ~$0,50 (50 GB histórico recente) |
+| **Google Cloud Storage (Coldline)** | Não utilizado | ~$0,80 (200 GB histórico antigo) |
+| **BigQuery (armazenamento)** | Grátis — ~5 GB no free tier (10 GB/mês) | ~$0,10 (5 GB Gold) |
+| **BigQuery (queries)** | Grátis — ~50 GB escaneados no free tier (1 TB/mês) | ~$0,25 (1 TB grátis — mesmo consumo) |
+| **BigQuery (load jobs)** | Grátis — ingestão batch e micro-lote streaming | Não utilizado — substituído pelo Dataflow |
+| **Dataflow** | Não utilizado — scripts Python locais | ~$1,50 (10h de processamento batch/mês) |
+| **Pub/Sub** | Grátis — ~5 GB/mês no free tier (10 GB/mês) | Grátis — mesmo consumo no free tier |
+| **Cloud Run** | Não implementado | Grátis (1M requisições/mês no free tier) |
+| **API Gateway (Apigee)** | Não implementado | Grátis até 2M chamadas/mês |
+| **GitHub Actions** | Grátis — repositório público | Grátis — repositório público |
+| **Cloud Monitoring** | Não utilizado — logging Python | Grátis (métricas básicas) |
+| **Cloud Billing + Budget Alerts** | Não configurado formalmente | Grátis |
+| **Total estimado** | **$0/mês** | **~$3,35/mês** |
 
-**Práticas adotadas:**
-- `WRITE_TRUNCATE` garante idempotência sem acúmulo de dados duplicados
-- `SELECT` explícito em todas as queries evita escaneamento de colunas desnecessárias
-- Partição por ano e clustering por `id_municipio/serie` reduzem bytes escaneados nas queries analíticas
-- Streaming via load job em micro-lote em vez de `insertAll` (que seria cobrado fora do free tier)
-- `exit 1` no `validate.py` evita que dados inválidos contaminem camadas downstream, prevenindo reprocessamentos custosos
+> **AS-IS:** custo zero sustentado pelo free tier do GCP. Viável para o volume atual de dados educacionais públicos (~3,9M linhas de alunos). O BigQuery absorve armazenamento e queries dentro dos limites gratuitos.
+>
+> **TO-BE:** ~$3,35/mês considerando o free tier do GCP e volume típico de dados educacionais. Em produção com maior volume, o particionamento, o Coldline e o Dataflow sob demanda garantem escala sem crescimento linear de custo.
+
+---
+
+### Práticas adotadas
+
+| Prática | AS-IS | TO-BE |
+|---|---|---|
+| **Formato de armazenamento** | BigQuery colunar nativo — evita custo de conversão | Parquet em todas as camadas — reduz I/O e armazenamento em até 80% vs CSV |
+| **Ciclo de vida de dados** | BigQuery gerencia internamente (time travel 7 dias) | Lifecycle Policy no GCS move dados para Nearline (30d) e Coldline (90d) automaticamente |
+| **Particionamento** | Por ano na Bronze · por id_municipio/serie na Silver | Por UF e ano no GCS · por data e município na Gold |
+| **Clusterização** | Por id_municipio e serie nas tabelas grandes | Por município na Gold — queries leem só o subconjunto necessário |
+| **Processamento** | Scripts Python locais — custo zero | Dataflow sob demanda — jobs existem só durante execução, sem cluster ocioso |
+| **Queries** | SELECT explícito em todas as queries — nunca `SELECT *` | SELECT explícito + partição/clustering — custo mínimo por query |
+| **Streaming** | Load job em micro-lote — evita insertAll pago | Pub/Sub + Dataflow — custo dentro do free tier (10 GB/mês) |
+| **API externa** | Não implementada | Cloud Run escala a zero — custo zero em períodos sem requisições |
+| **Orquestração** | GitHub Actions gratuito | GitHub Actions gratuito — elimina ~$300/mês do Cloud Composer |
+| **Alertas de custo** | Não configurado | Budget Alerts em 50%, 80% e 100% do orçamento mensal |
+| **Idempotência** | WRITE_TRUNCATE — evita reprocessamentos e duplicações custosas | WRITE_TRUNCATE + Iceberg ACID — garante consistência sem reprocessamento total |
 
 ---
 
@@ -261,7 +317,7 @@ A camada Gold está pronta para análises avançadas (evolução futura — TO-B
 
 ---
 
-## Como Executar Localmente
+## Como Executar Localmente a Arquitetura AS IS
 
 ### Pré-requisitos
 
@@ -340,70 +396,7 @@ roles/pubsub.editor
 
 ---
 
-## ⚖️ Decisões Arquiteturais e Trade-offs
 
-### Batch vs Streaming
-
-| | Batch | Streaming |
-|---|---|---|
-| **Quando** | Metas anuais · INEP · IBGE · histórico | Novos indicadores · alertas urgentes |
-| **Custo** | Baixo — jobs sob demanda | Maior — infra contínua (Pub/Sub always-on) |
-| **Latência** | Horas / dias | Segundos |
-| **Implementação** | GitHub Actions cron agendado | Pub/Sub + Dataflow always-on |
-
-**Decisão: pipeline híbrida.** Batch para 90% do volume (dados históricos e metas periódicas); streaming apenas para eventos de atualização de indicadores, onde latência importa.
-
----
-
-### Data Lake vs Data Warehouse
-
-| | Data Lake (GCS) | Data Warehouse (BigQuery) |
-|---|---|---|
-| **Schema** | Flexível · formato aberto (Parquet/Iceberg) | Rígido · tipado · otimizado para query |
-| **Custo/GB** | $0,004 (Coldline) a $0,02 (Standard) | $0,02 (ativo) |
-| **Uso** | Bronze e Silver | Gold |
-| **Engine** | Qualquer (Spark, Beam, Athena) | BigQuery |
-
-**Decisão: lakehouse (GCS + BigQuery).** GCS para armazenar barato nas camadas Bronze e Silver; BigQuery apenas para a Gold analítica. Melhor dos dois mundos: custo de data lake com performance de data warehouse onde importa.
-
----
-
-### Custo vs Performance
-
-| Decisão | Escolha | Impacto |
-|---|---|---|
-| Formato de arquivo | Parquet | Reduz I/O e armazenamento em até 80% vs CSV |
-| Particionamento | Por UF e ano | Queries leem só a partição necessária |
-| Clusterização | Por município | Reduz bytes escaneados em queries analíticas |
-| Storage histórico | Nearline / Coldline | Até 80% mais barato que Standard para dados frios |
-| Processamento | Dataflow serverless | Paga só pelo tempo de execução, sem cluster ocioso |
-| Orquestração | GitHub Actions | Zero custo fixo vs Cloud Composer (~$300/mês) |
-| Consultas analíticas | BigQuery on-demand | Paga por dado escaneado, não por cluster ligado |
-| API externa | Cloud Run | Escala a zero — custo zero em períodos ociosos |
-
-**Decisão: custo primeiro, performance onde importa.** Storage frio e serverless para dados históricos; particionamento e clusterização apenas na Gold, onde as queries analíticas exigem velocidade.
-
----
-
-## 💰 FinOps
-
-### Estimativa de Custo Mensal
-
-| Serviço | Uso estimado | Custo estimado |
-|---|---|---|
-| Google Cloud Storage (Standard) | 10 GB Bronze ativo | ~$0,20 |
-| Google Cloud Storage (Nearline) | 50 GB histórico recente | ~$0,50 |
-| Google Cloud Storage (Coldline) | 200 GB histórico antigo | ~$0,80 |
-| BigQuery (armazenamento) | 5 GB Gold | ~$0,10 |
-| BigQuery (queries) | 50 GB escaneados/mês | ~$0,25 (1 TB grátis) |
-| Dataflow | 10h de processamento batch/mês | ~$1,50 |
-| Pub/Sub | 5 GB eventos/mês | Grátis (free tier 10 GB) |
-| Cloud Run | 1M requisições/mês | Grátis (free tier) |
-| GitHub Actions | Workflows públicos | Grátis |
-| Cloud Monitoring | Métricas básicas | Grátis |
-| **Total estimado** | | **~$3,35/mês** |
-
-> Os custos acima consideram o free tier do GCP e um volume típico de dados educacionais públicos. Em produção com maior volume, o particionamento e o Coldline garantem escala sem crescimento linear de custo.
 
 ### Práticas adotadas
 
@@ -416,32 +409,6 @@ roles/pubsub.editor
 - **Budget Alerts** — alertas em 50%, 80% e 100% do orçamento mensal definido
 
 ---
-
-## 🤖 Aplicação em IA
-
-A camada Gold é o ponto de partida para análises avançadas e inteligência artificial:
-
-| Caso de uso | Tecnologia | Descrição |
-|---|---|---|
-| **Predição de alfabetização** | Vertex AI | Modelo treinado sobre série histórica para prever municípios com risco de não atingir a meta de 2030 |
-| **Clusters de vulnerabilidade** | Vertex AI | Segmentação de municípios por perfil educacional e socioeconômico combinado |
-| **Detecção de anomalias** | Vertex AI | Identifica queda abrupta no indicador para ação preventiva de gestores |
-| **Análise de desigualdade** | BigQuery + Looker Studio | Comparação temporal do indicador entre UFs e municípios |
-| **Relatórios automáticos** | Vertex AI Gemini | Gera resumos executivos em linguagem natural a partir dos dados da Gold |
-| **Políticas baseadas em dados** | BigQuery + API Gateway | Subsidia decisões de alocação de recursos do FUNDEB com evidências quantitativas |
-
----
-
-## 📊 Monitoramento
-
-| O que monitorar | Ferramenta | Alerta configurado |
-|---|---|---|
-| Falha em workflow do GitHub Actions | Cloud Monitoring + GitHub | Notificação imediata por e-mail |
-| Latência de job Dataflow | Cloud Monitoring | Alerta se > 30 min |
-| Volume de dados ingeridos | Cloud Logging | Alerta se < 80% do esperado |
-| Falha de entrega no Pub/Sub | Cloud Monitoring | Alerta em dead-letter queue |
-| Custo mensal | Cloud Billing | Alerta em 50%, 80% e 100% do budget |
-| Qualidade de dados (Silver) | Dataplex | Alerta se regras de qualidade reprovam > 1% dos registros |
 
 ## Estrutura do Repositório
 
@@ -467,6 +434,3 @@ A camada Gold é o ponto de partida para análises avançadas e inteligência ar
 ├── requirements.txt
 └── README.md
 ```
-
-
-[def]: 2_c4_contexto.jp
