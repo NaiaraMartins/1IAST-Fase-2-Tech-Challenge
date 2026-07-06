@@ -5,8 +5,8 @@
 ## Sumário
 
 - [Contexto do Problema](#contexto-do-problema)
-- [Arquitetura AS-IS](#arquitetura-as-is-implementada)
-- [Arquitetura TO-BE](#to-be--visão-profissional-evolução-futura)
+- [Arquitetura AS-IS](#diagrama-de-contexto-as-is)
+- [Arquitetura TO-BE](#diagrama-de-contexto-to-be)
 - [Tecnologias Utilizadas](#️-tecnologias-utilizadas--as-is-vs-to-be)
 - [Trade-offs](#️-decisões-arquiteturais-e-trade-offs)
 - [FinOps](#-finops)
